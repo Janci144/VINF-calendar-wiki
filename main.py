@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 import re
 from regex import regex
+import nltk
 
 
 class Reader:
@@ -71,33 +72,56 @@ class Page:
 
         return closest_token
 
+    def paragraph_splitter(self, sep):
+        text_split = self.text.split(sep=sep)
+        if len(text_split) >= 2:
+            self.text = text_split[0]
+            return True
+        else:
+            return None
+
     def parse_text(self):
         results = []
-        start = time.perf_counter()
+        self.text = regex.sub(r'<ref.*\n?.*</ref>', repl="", string=self.text)
+        self.text = regex.sub(r'{\| class=\"wikitable.*\|}', repl="", string=self.text, flags=regex.DOTALL)
+        self.text = regex.sub(r'{{[cC]ite.*}}', repl="", string=self.text, flags=regex.DOTALL)
 
-        regex.sub()
+        if self.paragraph_splitter(sep='== See also =='):
+            pass
+        elif self.paragraph_splitter(sep='==Notes=='):
+            pass
+        elif self.paragraph_splitter(sep='==References=='):
+            pass
+        elif self.paragraph_splitter(sep='== Bibliography =='):
+            pass
+        elif self.paragraph_splitter(sep='== External links =='):
+            pass
+        elif self.paragraph_splitter(sep='=== Sources ==='):
+            pass
+
         sentences_reg = regex.finditer(r'(^| )[A-Z][^\.!?]{5,}[\.!?]', self.text) # possibly [A-Z][^\.!?]{5,}[\.!?] for performance
-        Reader.g_time += time.perf_counter() - start
 
         for sentence_it in sentences_reg:
             sentence = sentence_it.group(0)
             date_in_text = self.find_date(sentence)
             if date_in_text:
-                look_before = 30
-                look_after = 20
+                look_before = 60
+                look_after = 30
                 start = date_in_text.start - look_before if date_in_text.start >= look_before else 0
+                end = date_in_text.end + look_after if date_in_text.end + look_after < len(sentence) else len(sentence)
                 if date_in_text.end + look_after > len(sentence):
                     token = self.find_token(sentence[start:], date_in_text.start, date_in_text.end)
                 else:
                     token = self.find_token(sentence[start:date_in_text.end + look_after], date_in_text.start, date_in_text.end)
 
                 results.append(Index(token=token if token else self.title, date=date_in_text.date,
-                                     info="info"))
+                                     info=sentence[start:end].replace('\n', ' ')))
 
-                # len(proper_nouns) > 1 else nouns[0] if nouns else ""))
+                #  I couldnt find best word that explain the purpose, often the result was meaningful, therefore I
+                #  decided not to use it.
+
                 # tokenized = nltk.pos_tag(nltk.word_tokenize(sentence))
-                # Reader.g_time += time.perf_counter() - start
-
+                #
                 # proper_nouns = []
                 # nouns = []
                 # for (word, pos) in tokenized:
@@ -155,13 +179,14 @@ class Parser:
         return page.get_parsed_date_tokens()
 
 
+def create_testing_file(name, size):
+    
 if __name__ == '__main__':
     # with open('E:\VINF_data\enwiki-20200401-pages-articles.xml', encoding='UTF-8') as f:
     import cProfile, pstats, io
     import time
     import os
     import random
-
 
     def start_parse():
         start_time = time.clock()
@@ -194,8 +219,10 @@ if __name__ == '__main__':
                     else:
                         data_for_next_chunk = data[end_pages_positions[-1] + page_end_tag_length:]
 
-            for res in final_results:
-                print('---------\n', 'token: ' + res.token + ",",  res.date + ",", res.info)
+            with open('output.txt', 'w', encoding='UTF-8') as file:
+                for res in final_results:
+                    file.write('token: ' + res.token + "," + res.date + "," + res.info + '\n')
+                    #print('---------\n', 'token: ' + res.token + ",",  res.date + ",", res.info)
             print("len", len(final_results))
             ttime_sec = time.clock() - start_time
             print("total time: ", ttime_sec)
