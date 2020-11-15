@@ -17,6 +17,17 @@ class Reader:
                 break
             yield data
 
+    def read_till_max(self, file_object, max_bytes):
+        read_bytes = 0
+        while True:
+            data = file_object.read(self.chunk_size)
+            read_bytes += self.chunk_size
+            if read_bytes > max_bytes:
+                break
+            if not data:
+                break
+            yield data
+
 
 class DateInText:
     def __init__(self, date, start, end):
@@ -114,8 +125,39 @@ class Page:
                 else:
                     token = self.find_token(sentence[start:date_in_text.end + look_after], date_in_text.start, date_in_text.end)
 
+                token_context = sentence[start:end]
+
+                # token with full word at beginning
+                i = start
+                counter = 0
+                while True:
+                    i -= 1
+                    counter += 1
+                    if i < 0 or counter > 8:
+                        break
+
+                    if not(sentence[i].isalpha() or sentence[i].isdigit()):
+                        token_context = sentence[i+1:start] + token_context
+                        break
+
+                # token with full word at end
+                i = end
+                counter = 0
+                while True:
+                    i += 1
+                    counter += 1
+                    if i > len(sentence)-1 or counter > 8:
+                        break
+                    if not(sentence[i].isalpha() or sentence[i].isdigit()):
+                        token_context += sentence[end:end+counter]
+                        break
+
+                token_context = token_context.replace('\n', ' ')
+                token_context = regex.sub(r'[^a-zA-Z1-9.!?:%$ ]', '', token_context)
+                token_context = token_context.strip()
+
                 results.append(Index(token=token if token else self.title, date=date_in_text.date,
-                                     info=sentence[start:end].replace('\n', ' ')))
+                                     info=token_context))
 
                 #  I couldnt find best word that explain the purpose, often the result was meaningful, therefore I
                 #  decided not to use it.
@@ -137,12 +179,13 @@ class Page:
 
     def _parse_infobox(self, text: str, title):
         result = []
+        text = regex.sub(r'\n ?\|', '\n|', text)
         lines = text.split('\n|')
         for line in lines:
             date_in_text = self.find_date(line)
             if date_in_text:
                 info = [x.strip() for x in line.split('=')]
-                result.append(Index(token=title, date=date_in_text.date, info=info[0]))
+                result.append(Index(token=title, date=date_in_text.date, info=info[0].replace('\n', '')))
 
         return result
 
@@ -180,13 +223,23 @@ class Parser:
 
 
 def create_testing_file(name, size):
-    
+    with open('E:\VINF_data\enwiki-20200401-pages-articles.xml', encoding='UTF-8') as f:
+        one_Mb = 1024*1024
+        reader = Reader(chunk_size=one_Mb)
+        with open(name, 'w', encoding='UTF-8') as write_file:
+            for data in reader.read_till_max(f, max_bytes=size):
+                write_file.write(data)
+
+
 if __name__ == '__main__':
     # with open('E:\VINF_data\enwiki-20200401-pages-articles.xml', encoding='UTF-8') as f:
     import cProfile, pstats, io
     import time
     import os
     import random
+
+    # create_testing_file('large_testing.xml', 1024*1000*2000)
+    # exit(0)
 
     def start_parse():
         start_time = time.clock()
@@ -195,43 +248,43 @@ if __name__ == '__main__':
         parser = Parser()
         final_results = []
 
-        with open(path, encoding='UTF-8') as f:
+        with open(path, encoding='UTF-8') as read_file:
             page_tag_length = len('<page>')
             page_end_tag_length = len('</page>')
             data_for_next_chunk = ""
-            for data in reader.read_in_chunks(f):
-                data = f'{data_for_next_chunk}{data}'
-                start_pages_positions = [m.start() for m in re.finditer('<page>', data)]
-                end_pages_positions = [m.start() for m in re.finditer('</page>', data)]
+            with open('output.txt', 'w', encoding='UTF-8') as write_file:
+                for data in reader.read_in_chunks(read_file):
+                    data = f'{data_for_next_chunk}{data}'
+                    start_pages_positions = [m.start() for m in re.finditer('<page>', data)]
+                    end_pages_positions = [m.start() for m in re.finditer('</page>', data)]
 
-                if not start_pages_positions and not end_pages_positions:
-                    continue
+                    if not start_pages_positions and not end_pages_positions:
+                        continue
 
-                for i, end in enumerate(end_pages_positions):
-                    start = start_pages_positions[i]
-                    final_results.extend(parser.parse_page(data[start:end+page_end_tag_length]))
+                    for i, end in enumerate(end_pages_positions):
+                        start = start_pages_positions[i]
+                        results = parser.parse_page(data[start:end+page_end_tag_length])
+                        for result in results:
+                            write_file.write('token: ' + result.token + "," + result.date + "," + result.info + '\n')
 
-                if not end_pages_positions:
-                    data_for_next_chunk = data
-                elif len(start_pages_positions) != len(end_pages_positions):
                     if not end_pages_positions:
-                        data_for_next_chunk = data[start_pages_positions[0]:]
-                    else:
-                        data_for_next_chunk = data[end_pages_positions[-1] + page_end_tag_length:]
+                        data_for_next_chunk = data
+                    elif len(start_pages_positions) != len(end_pages_positions):
+                        if not end_pages_positions:
+                            data_for_next_chunk = data[start_pages_positions[0]:]
+                        else:
+                            data_for_next_chunk = data[end_pages_positions[-1] + page_end_tag_length:]
 
-            with open('output.txt', 'w', encoding='UTF-8') as file:
-                for res in final_results:
-                    file.write('token: ' + res.token + "," + res.date + "," + res.info + '\n')
-                    #print('---------\n', 'token: ' + res.token + ",",  res.date + ",", res.info)
             print("len", len(final_results))
             ttime_sec = time.clock() - start_time
             print("total time: ", ttime_sec)
             f_size = os.path.getsize(path)
             print(f"Speed: {(f_size/1000000)/ttime_sec}MB/sec")
 
-
-    cProfile.run('start_parse()', 'restats')
-    print('Time: ', Reader.g_time)
+    start_parse()
+    # For debugging purposes
+    # cProfile.run('start_parse()', 'restats')
+    # print('Time: ', Reader.g_time)
 
     # import pstats
     # p = pstats.Stats('restats')
