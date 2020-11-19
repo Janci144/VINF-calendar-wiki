@@ -1,9 +1,8 @@
+#!/usr/bin/env python
+
 import os
 os.system('pip install regex')
-os.system('pip install elementpath')
 
-import xml.etree.ElementTree as ET
-import re
 from regex import regex
 import sys
 
@@ -74,7 +73,7 @@ class Page:
         return closest_token
 
     def paragraph_splitter(self, sep):
-        text_split = self.text.split(sep=sep)
+        text_split = self.text.split(sep)
         if len(text_split) >= 2:
             self.text = text_split[0]
             return True
@@ -83,7 +82,7 @@ class Page:
 
     def parse_text(self):
         results = []
-        self.text = regex.sub(r'<ref.*\n?.*</ref>', repl="", string=self.text)
+        self.text = regex.sub(r'&lt;ref.*\n?.*&lt;/ref&gt;', repl="", string=self.text)
         self.text = regex.sub(r'{\| class=\"wikitable.*\|}', repl="", string=self.text, flags=regex.DOTALL)
         self.text = regex.sub(r'{{[cC]ite.*}}', repl="", string=self.text, flags=regex.DOTALL)
 
@@ -151,7 +150,7 @@ class Page:
 
         return results
 
-    def _parse_infobox(self, text: str, title):
+    def _parse_infobox(self, text, title):
         result = []
         text = regex.sub(r'\n ?\|', '\n|', text)
         lines = text.split('\n|')
@@ -181,12 +180,11 @@ class Parser:
         pass
 
     def parse_page(self, page):
-        tree = ET.fromstring(page)
-        title = tree.find('title').text
-        text = tree.find('revision').find('text').text
+        title = regex.search(r'(?<=<title>).*(?=<\/title>)', page).group(0)
+        text = regex.search(r'(?<=<text).*(?=<\/text>)', page, flags=regex.DOTALL).group(0)
         infobox = None
 
-        infobox_regex = regex.search(r'(?=\{Infobox)(\{([^{}]|(?1))*\})', page)
+        infobox_regex = regex.search(r'(?=\{Infobox)(\{([^{}]|(?1))*\})', text)
         text_start_index = 0
         if infobox_regex:
             text_start_index = infobox_regex.end()
@@ -196,43 +194,28 @@ class Parser:
         return page.get_parsed_date_tokens()
 
 
-if __name__ == '__main__':
-    parser = Parser()
-    page_tag_length = len('<page>')
-    page_end_tag_length = len('</page>')
-    data_for_next_chunk = ""
-    lines_to_read_in_chunk = 5000
-    lines_read = 0
-    reader = Reader()
-    for line in sys.stdin:
-        lines_read += 1
-        line = line.strip()
+parser = Parser()
+data_for_next_chunk = ""
+counter = 100
+for line in sys.stdin:
+    line = line.strip()
+    if line.find('</page') != -1:
+        data_for_next_chunk += '</page>'
+        data = data_for_next_chunk
+        try:
+            results = parser.parse_page(data)
+            for result in results:
+                print('%s\t%s' % (result.token, "," + result.date + "," + result.info))
+        except Exception:
+            data_for_next_chunk = ""
+            continue
+        data_for_next_chunk = ""
+    elif line.find('page>') != -1:
+        data_for_next_chunk += '<page>' + '\n'
+    else:
         data_for_next_chunk += line + '\n'
 
-        if lines_read < lines_to_read_in_chunk and line:
-            continue
-        else:
-            data = data_for_next_chunk
-            start_pages_positions = [m.start() for m in re.finditer('<page>', data)]
-            end_pages_positions = [m.start() for m in re.finditer('</page>', data)]
-
-            if not start_pages_positions and not end_pages_positions:
-                continue
-
-            for i, end in enumerate(end_pages_positions):
-                start = start_pages_positions[i]
-                results = parser.parse_page(data[start:end+page_end_tag_length])
-                for result in results:
-                    print('%s\t%s' % (result.token, "," + result.date + "," + result.info))
-
-            if not end_pages_positions:
-                data_for_next_chunk = data
-            elif len(start_pages_positions) != len(end_pages_positions):
-                if not end_pages_positions:
-                    data_for_next_chunk = data[start_pages_positions[0]:]
-                else:
-                    data_for_next_chunk = data[end_pages_positions[-1] + page_end_tag_length:]
-            elif len(start_pages_positions) == len(end_pages_positions):
-                data_for_next_chunk = ""
-
-            lines_read = 0
+if data_for_next_chunk:
+    results = parser.parse_page(data_for_next_chunk)
+    for result in results:
+        print('%s\t%s' % (result.token, "," + result.date + "," + result.info))
