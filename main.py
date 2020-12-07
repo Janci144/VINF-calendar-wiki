@@ -1,7 +1,7 @@
+
 import xml.etree.ElementTree as ET
 import re
 from regex import regex
-import nltk
 
 
 class Reader:
@@ -63,25 +63,25 @@ class Page:
 
         return None
 
-    def find_token(self, text, date_start, date_end):
-        token_reg = regex.finditer(r'[A-Z][a-zA-Z]{3,}(?: [A-Z][a-zA-Z]*){0,}', text)
-
-        closest_token = None
-        closest_distance = 100
-        for token_it in token_reg:
-            token = token_it.group(0)
-
-            if token_it.start() == date_start:
-                continue
-
-            if token_it.end() < date_start and date_start - token_it.end() < closest_distance:
-                closest_distance = date_start - token_it.end()
-                closest_token = token
-            elif token_it.start() - date_end < closest_distance:
-                closest_distance = token_it.start() - date_end
-                closest_token = token
-
-        return closest_token
+    # def find_token(self, text, date_start, date_end):
+    #     token_reg = regex.finditer(r'[A-Z][a-zA-Z]{3,}(?: [A-Z][a-zA-Z]*){0,}', text)
+    #
+    #     closest_token = None
+    #     closest_distance = 100
+    #     for token_it in token_reg:
+    #         token = token_it.group(0)
+    #
+    #         if token_it.start() == date_start:
+    #             continue
+    #
+    #         if token_it.end() < date_start and date_start - token_it.end() < closest_distance:
+    #             closest_distance = date_start - token_it.end()
+    #             closest_token = token
+    #         elif token_it.start() - date_end < closest_distance:
+    #             closest_distance = token_it.start() - date_end
+    #             closest_token = token
+    #
+    #     return closest_token
 
     def paragraph_splitter(self, sep):
         text_split = self.text.split(sep=sep)
@@ -120,10 +120,10 @@ class Page:
                 look_after = 30
                 start = date_in_text.start - look_before if date_in_text.start >= look_before else 0
                 end = date_in_text.end + look_after if date_in_text.end + look_after < len(sentence) else len(sentence)
-                if date_in_text.end + look_after > len(sentence):
-                    token = self.find_token(sentence[start:], date_in_text.start, date_in_text.end)
-                else:
-                    token = self.find_token(sentence[start:date_in_text.end + look_after], date_in_text.start, date_in_text.end)
+                # if date_in_text.end + look_after > len(sentence):
+                #     token = self.find_token(sentence[start:], date_in_text.start, date_in_text.end)
+                # else:
+                #     token = self.find_token(sentence[start:date_in_text.end + look_after], date_in_text.start, date_in_text.end)
 
                 token_context = sentence[start:end]
 
@@ -153,10 +153,10 @@ class Page:
                         break
 
                 token_context = token_context.replace('\n', ' ')
-                token_context = regex.sub(r'[^a-zA-Z1-9.!?:%$ ]', '', token_context)
+                token_context = regex.sub(r'[^a-zA-Z0-9.!?:%$;, ]', '', token_context)
                 token_context = token_context.strip()
 
-                results.append(Index(token=token if token else self.title, date=date_in_text.date,
+                results.append(Index(token=self.title, date=date_in_text.date,
                                      info=token_context))
 
                 #  I couldnt find best word that explain the purpose, often the result was meaningful, therefore I
@@ -191,9 +191,9 @@ class Page:
 
     def get_parsed_date_tokens(self):
         results = []
-        if self.infobox:
-            infobox_results = self._parse_infobox(self.infobox, self.title)
-            results.extend(infobox_results)
+        # if self.infobox:
+        #     infobox_results = self._parse_infobox(self.infobox, self.title)
+        #     results.extend(infobox_results)
 
         if self.text:
             text_results = self.parse_text()
@@ -230,20 +230,18 @@ def create_testing_file(name, size):
             for data in reader.read_till_max(f, max_bytes=size):
                 write_file.write(data)
 
-
 if __name__ == '__main__':
-    # with open('E:\VINF_data\enwiki-20200401-pages-articles.xml', encoding='UTF-8') as f:
+    #with open('E:\VINF_data\enwiki-20200401-pages-articles.xml', encoding='UTF-8') as f:
     import cProfile, pstats, io
     import time
     import os
     import random
 
-    # create_testing_file('large_testing.xml', 1024*1000*2000)
-    # exit(0)
-
-    def start_parse():
+    # create_testing_file('mild_testing.xml', 1024*1000*100)
+    exit(0)
+    def start_parse(number_of_errors: int):
         start_time = time.clock()
-        path = "testing.xml"
+        path = "E:\VINF_data\enwiki-20200401-pages-articles.xml"
         reader = Reader(chunk_size=1024 * 1024)
         parser = Parser()
         final_results = []
@@ -263,9 +261,13 @@ if __name__ == '__main__':
 
                     for i, end in enumerate(end_pages_positions):
                         start = start_pages_positions[i]
-                        results = parser.parse_page(data[start:end+page_end_tag_length])
-                        for result in results:
-                            write_file.write('token: ' + result.token + "," + result.date + "," + result.info + '\n')
+                        try:
+                            results = parser.parse_page(data[start:end+page_end_tag_length])
+                            for result in results:
+                                write_file.write('%s\t%s' % (result.token, ";" + result.date + ";" + result.info) + "\n")
+                        except Exception as e:
+                            print(e)
+                            number_of_errors += 1
 
                     if not end_pages_positions:
                         data_for_next_chunk = data
@@ -280,8 +282,10 @@ if __name__ == '__main__':
             print("total time: ", ttime_sec)
             f_size = os.path.getsize(path)
             print(f"Speed: {(f_size/1000000)/ttime_sec}MB/sec")
+            print("error number:" + str(number_of_errors))
 
-    start_parse()
+    number_of_errors = 0
+    start_parse(number_of_errors)
     # For debugging purposes
     # cProfile.run('start_parse()', 'restats')
     # print('Time: ', Reader.g_time)
