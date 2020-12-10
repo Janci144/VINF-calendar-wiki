@@ -18,6 +18,47 @@ def create_iter(array):
             "date": doc["date"]
         }
 
+index_body = {
+    "settings": {
+        "analysis": {
+            "filter": {
+                "prefixes": {
+                    "type": "edge_ngram",
+                    "min_gram": 1,
+                    "max_gram": 25
+                }
+            },
+            "analyzer": {
+                "my_analyzer": {
+                    "type": "custom",
+                    "tokenizer": "standard",
+                    "filter": ["lowercase", "prefixes"]
+                }
+            }
+        }
+    },
+    "mappings": {
+        "document2": {
+            "properties": {
+                "title": {
+                    "type": "text",
+                    "analyzer": "my_analyzer",
+                    "search_analyzer": "standard"
+                },
+                "text": {
+                    "type": "text",
+                    "index": "false"
+                },
+                "date": {
+                    "type": "text",
+                    "index": "false"
+                }
+            }
+        }
+    }
+}
+
+es.indices.create("wiki22", body=index_body)
 
 start_time = time.clock()
 with open('output.txt', 'r', encoding='utf-8') as f:
@@ -65,6 +106,9 @@ with open('output.txt', 'r', encoding='utf-8') as f:
             else:
                 month_value = 0
 
+            if int(year) > 2020:
+                skipped = True
+
             if month_value == 0:
                 try:
                     date = datetime.datetime(year=int(year), month=1, day=1)
@@ -78,10 +122,6 @@ with open('output.txt', 'r', encoding='utf-8') as f:
                         date = datetime.datetime(year=int(year), month=month_value, day=1)
                     except Exception as ex:
                         skipped = True
-                    # try:
-                    #     date = datetime.datetime(year=int(year), month=month_value, day=1)
-                    # except Exception as ex:
-                    #     print(e)
         else:
             res = re.search(r'([a-zA-Z]{3,8}|in) \d{4}', line)
             date_regex = res.group(0)
@@ -115,15 +155,8 @@ with open('output.txt', 'r', encoding='utf-8') as f:
             elif month == 'December':
                 month_value = 12
             else:
-                # res = re.search(r'The|in|from|the|since|early|late|at|till|arround|after', month)
-                # if res:
                 month_value = 0
 
-            # if month_value == -1:
-            #     skipped = True
-            #     wrong += 1
-            #     print("damage:", month)
-            # else:
             if month_value == 0:
                 try:
                     date = datetime.datetime(year=int(year), month=1, day=1)
@@ -140,10 +173,7 @@ with open('output.txt', 'r', encoding='utf-8') as f:
             wrong += 1
             print("skipping {}. wrong item", wrong)
 
-        # a = str(date)
-        # b = datetime.datetime.strptime(str(date), "%Y-%m-%d %H:%M:%S")
         splits = line.split(';', 2)
-        #title = splits[0].replace('\t','').lower().replace(' ', '_')
         title = splits[0].replace('\t', '')
 
         if len(title) > 35:
@@ -155,9 +185,8 @@ with open('output.txt', 'r', encoding='utf-8') as f:
         date_str = str(date)
         text = re.sub(r'{{.*}}', '', splits[2])
         text = re.sub(r'[^a-zA-Z0-9.!?:%$;, ]', '', text)
-        #text = re.sub(r'[\[\]]', '', text).replace('\n', '')
 
-        bulk_array.append({"_index": "wiki", "title": title, "date": date_str, "text": text})
+        bulk_array.append({"_index": "wiki22", "title": title, "date": date_str, "text": text})
         if len(bulk_array) > 500:
             print(f"{lines_count} lines processed")
             actions = create_iter(bulk_array)
@@ -177,19 +206,3 @@ with open('output.txt', 'r', encoding='utf-8') as f:
     print(f"Speed: {(f_size / 1000000) / ttime_sec}MB/sec")
     print("wrong", wrong, ",too long", too_long)
     print("count", lines_count)
-
-
- #
-        # if index == last_index or last_index == "":
-        #     bulk_array.append({"_index": "test1234", "title": index, "date": date_str, "text": text})
-        #     last_index = index
-        # else:
-        #     print(bulk_array)
-        #     actions = create_iter(bulk_array)
-        #     try:
-        #         helpers.bulk(es, actions)
-        #         print("bulk done")
-        #     except Exception as e:
-        #         print("error timeout")
-        #     bulk_array = []
-        #     last_index = index
